@@ -1,4 +1,6 @@
 import os
+import json
+
 # HTTPException: lets you return clean web error codes 
 # (like 400 Bad Request or 500 Internal Server Error) 
 # back to a client browser.
@@ -17,11 +19,22 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 # service ecosystem (like Docs, Sheets, or Drive).
 from googleapiclient.discovery import build
 
+# Gemini 
+from google import genai
+from google.genai import types
+
+from dotenv import load_dotenv
+load_dotenv()
+
 app = FastAPI(
     title="Resume Tailor Backend Pipeline",
     description="API to extract Google Doc content and process job applications",
     version="1.0"
 )
+
+# Initialize the Gemini client (It automatically looks for an environment variable named GEMINI_API_KEY)
+ai_client = genai.Client()
+
 
 # If modifying these scopes, delete the file token.json.
 # 'auth/documents.readonly' allows us to read docs without accidental modifications (read-only)
@@ -87,37 +100,96 @@ def extract_text_from_elements(elements):
 # explicitly named "document_id".
 class DocRequest(BaseModel):
     document_id: str
+    job_description: str
 
-# Registers a web-accessible POST route.
-@app.post("/api/fetch-cv")
-async def fetch_cv(payload: DocRequest):
-    """
-    Accepts a Google Doc ID, authenticates, extracts the body text, 
-    and returns it.
-    """
+# # Registers a web-accessible POST route.
+# @app.post("/api/fetch-cv")
+# async def fetch_cv(payload: DocRequest):
+#     """
+#     Accepts a Google Doc ID, authenticates, extracts the body text, 
+#     and returns it.
+#     """
+#     try:
+#         # Initialize the Docs service
+#         service = get_google_docs_service()
+        
+#         # Retrieve the document structure from Google API
+#         document = service.documents().get(documentId=payload.document_id).execute()
+#         doc_title = document.get('title')
+#         doc_body = document.get('body').get('content')
+        
+#         # Parse the JSON structural elements into raw text string
+#         raw_text = extract_text_from_elements(doc_body)
+        
+#         return {
+#             "status": "success",
+#             "document_title": doc_title,
+#             "text_content": raw_text
+#         }
+        
+#     except FileNotFoundError as fnf_error:
+#         raise HTTPException(status_code=500, detail=str(fnf_error))
+#     except Exception as e:
+#         raise HTTPException(status_code=400, detail=f"Failed to fetch document: {str(e)}")
+
+@app.post("/api/tailor-cv")
+async def tailor_cv(payload: DocRequest):
     try:
-        # Initialize the Docs service
+        # Step A: Fetch the base CV text using our existing logic
         service = get_google_docs_service()
-        
-        # Retrieve the document structure from Google API
         document = service.documents().get(documentId=payload.document_id).execute()
-        doc_title = document.get('title')
-        doc_body = document.get('body').get('content')
+        base_cv_text = extract_text_from_elements(document.get('body').get('content'))
         
-        # Parse the JSON structural elements into raw text string
-        raw_text = extract_text_from_elements(doc_body)
+        # Step B: Design the system prompt with strict rules
+        system_instruction = (
+            "You are an expert technical resume writer. Your job is to adapt the user's base CV "
+            "to better match the provided job description. "
+            "CRITICAL RULES:\n"
+            "1. Do NOT invent fake experience, fake companies, or alter dates.\n"
+            "2. Rephrase existing bullet points to naturally highlight skills, tools, and keywords requested in the job description.\n"
+            "3. You must return your response strictly as a JSON object containing an array of strings named 'tailored_bullets'."
+        )
+        
+        prompt = f"""
+        Base CV Text:
+        {base_cv_text}
+        
+        Target Job Description:
+        {payload.job_description}
+        """
+        
+        # Step C: Ask the LLM for a structured JSON response
+        response = ai_client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                # This forces the model to respond with clean, parseable JSON matching our structure
+                response_mime_type="application/json",
+                response_schema=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "tailored_bullets": types.Schema(
+                            type=types.Type.ARRAY,
+                            items=types.Schema(type=types.Type.STRING)
+                        )
+                    },
+                    required=["tailored_bullets"]
+                )
+            )
+        )
+        
+        # Parse the string response from the AI back into a standard Python dictionary
+        tailored_data = json.loads(response.text)
         
         return {
             "status": "success",
-            "document_title": doc_title,
-            "text_content": raw_text
+            "data": tailored_data
         }
         
-    except FileNotFoundError as fnf_error:
-        raise HTTPException(status_code=500, detail=str(fnf_error))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to fetch document: {str(e)}")
-
+        raise HTTPException(status_code=500, detail=f"AI Tailoring failed: {str(e)}")
+    
 if __name__ == "__main__":
     # Run the server locally on port 8000
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
