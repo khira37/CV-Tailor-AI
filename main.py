@@ -5,6 +5,8 @@ import json
 # (like 400 Bad Request or 500 Internal Server Error) 
 # back to a client browser.
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
 # It ensures data sent to your API matches exact types
 from pydantic import BaseModel
 # The lightning-fast local web server that
@@ -30,6 +32,14 @@ app = FastAPI(
     title="Resume Tailor Backend Pipeline",
     description="API to extract Google Doc content and process job applications",
     version="1.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Initialize the Gemini client (It automatically looks for an environment variable named GEMINI_API_KEY)
