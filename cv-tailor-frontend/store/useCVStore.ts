@@ -1,5 +1,10 @@
 import { create } from 'zustand';
+// why did we name it store? 
+// a store in zustand is where we store the state 
+// and any function that update that state
 
+// This defines the structure of the data. 
+// It tells TypeScript exactly what variables exist and thier types.
 interface CVState {
   documentId: string;
   jobDescription: string;

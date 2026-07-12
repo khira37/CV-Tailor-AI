@@ -19,10 +19,10 @@ export default function CVTailingDashboard() {
     <main className="min-h-screen bg-slate-50 text-slate-900 p-8 font-sans">
       <header className="max-w-7xl mx-auto mb-8 border-b border-slate-200 pb-4">
         <h1 className="text-3xl font-extrabold tracking-tight text-indigo-600">
-          CV Tailor AI Pipeline
+          CV Tailor AI 
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          Extract Google Docs context and optimize application structures via Gemini.
+          Extract Google Docs context and optimize application structures via LLM.
         </p>
       </header>
 

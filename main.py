@@ -112,36 +112,6 @@ class DocRequest(BaseModel):
     document_id: str
     job_description: str
 
-# # Registers a web-accessible POST route.
-# @app.post("/api/fetch-cv")
-# async def fetch_cv(payload: DocRequest):
-#     """
-#     Accepts a Google Doc ID, authenticates, extracts the body text, 
-#     and returns it.
-#     """
-#     try:
-#         # Initialize the Docs service
-#         service = get_google_docs_service()
-        
-#         # Retrieve the document structure from Google API
-#         document = service.documents().get(documentId=payload.document_id).execute()
-#         doc_title = document.get('title')
-#         doc_body = document.get('body').get('content')
-        
-#         # Parse the JSON structural elements into raw text string
-#         raw_text = extract_text_from_elements(doc_body)
-        
-#         return {
-#             "status": "success",
-#             "document_title": doc_title,
-#             "text_content": raw_text
-#         }
-        
-#     except FileNotFoundError as fnf_error:
-#         raise HTTPException(status_code=500, detail=str(fnf_error))
-#     except Exception as e:
-#         raise HTTPException(status_code=400, detail=f"Failed to fetch document: {str(e)}")
-
 @app.post("/api/tailor-cv")
 async def tailor_cv(payload: DocRequest):
     try:
