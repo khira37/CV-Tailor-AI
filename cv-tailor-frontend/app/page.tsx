@@ -10,9 +10,11 @@ export default function CVTailingDashboard() {
     tailoredBullets,
     isLoading,
     error,
+    isSaving,
     setDocumentId,
     setJobDescription,
-    processCV
+    processCV,
+    updateGoogleDoc,  
   } = useCVStore();
 
   return (
@@ -69,6 +71,15 @@ export default function CVTailingDashboard() {
           >
             {isLoading ? 'Processing Pipeline...' : 'Generate Optimized Content'}
           </button>
+
+          <button
+            onClick={updateGoogleDoc}
+            disabled={isSaving}
+            className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-semibold text-sm rounded-lg transition shadow-sm text-center"
+          >
+            {isSaving ? "Updating Document..." : "Apply Changes to Google Doc"}
+          </button>
+
         </section>
 
         {/* RIGHT COLUMN: AI Live Output Output Viewport */}
@@ -102,7 +113,7 @@ export default function CVTailingDashboard() {
                     className="p-4 rounded-lg bg-slate-50 border border-slate-150 hover:border-indigo-200 transition relative pl-8 group"
                   >
                     <span className="absolute left-3 top-4 text-indigo-500 font-bold text-sm select-none">•</span>
-                    <p className="text-sm leading-relaxed text-slate-800 font-medium">{bullet}</p>
+                    <p className="text-sm leading-relaxed text-slate-800 font-medium">{bullet.new_text}</p>
                   </div>
                 ))}
               </div>

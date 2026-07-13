@@ -1,28 +1,47 @@
 import { create } from 'zustand';
+
 // why did we name it store? 
 // a store in zustand is where we store the state 
 // and any function that update that state
+
+interface ReplacementItem {
+  old_text: string;
+  new_text: string;
+}
+
+interface SummaryReplacement {
+  old_summary: string;
+  new_summary: string;
+}
 
 // This defines the structure of the data. 
 // It tells TypeScript exactly what variables exist and thier types.
 interface CVState {
   documentId: string;
   jobDescription: string;
-  tailoredBullets: string[];
+  tailoredBullets: ReplacementItem[];
+  summaryReplacement: SummaryReplacement | null;
   isLoading: boolean;
   error: string | null;
+  isSaving: boolean;
+  updateGoogleDoc: () => Promise<void>;
   setDocumentId: (id: string) => void;
   setJobDescription: (text: string) => void;
   processCV: () => Promise<void>;
   resetStore: () => void;
+  
+
+  
 }
 
 export const useCVStore = create<CVState>((set, get) => ({
   documentId: '',
   jobDescription: '',
   tailoredBullets: [],
+  summaryReplacement: null,
   isLoading: false,
   error: null,
+  isSaving : false,
 
   setDocumentId: (id) => set({ documentId: id }),
   setJobDescription: (text) => set({ jobDescription: text }),
@@ -67,4 +86,40 @@ export const useCVStore = create<CVState>((set, get) => ({
   },
 
   resetStore: () => set({ tailoredBullets: [], error: null }),
+
+  updateGoogleDoc: async () => {
+    const { documentId, tailoredBullets, summaryReplacement } = get();
+    
+    if (!documentId) {
+      alert("No document ID found!");
+      return;
+    }
+
+    set({ isSaving: true });
+    
+    try {
+      const response = await fetch('http://127.0.0.1:8000/api/update-doc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          document_id: documentId,
+          summary_replacement: summaryReplacement, // Make sure you track this in your store state
+          tailored_bullets: tailoredBullets
+        })
+      });
+
+      const result = await response.json();
+      if (response.ok && result.status === 'success') {
+        alert("🎉 Google Doc successfully updated in-place!");
+      } else {
+        throw new Error(result.detail || "Failed to update doc");
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Error updating document. Check backend console.");
+    } finally {
+      set({ isSaving: false });
+    }
+  }
+
 }));
