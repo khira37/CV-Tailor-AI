@@ -1,11 +1,14 @@
 import os
 import json
+import io
+from contextlib import contextmanager
 
 # HTTPException: lets you return clean web error codes 
 # (like 400 Bad Request or 500 Internal Server Error) 
 # back to a client browser.
 from fastapi import FastAPI, APIRouter, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 # It ensures data sent to your API matches exact types
 from pydantic import BaseModel, Field
@@ -51,14 +54,17 @@ ai_client = genai.Client()
 
 # If modifying these scopes, delete the file token.json.
 # 'auth/documents.readonly' allows us to read docs without accidental modifications (read-only)
-SCOPES = ['https://www.googleapis.com/auth/documents']
+SCOPES = [
+    'https://www.googleapis.com/auth/documents',
+    'https://www.googleapis.com/auth/drive'
+]
 
 
 # This function manages token state. 
 # It reads an existing session token, 
 # refreshes it if it expired, 
 # or boots up a first-time login sequence.
-def get_google_docs_service():
+def get_google_auth_credentials():
     """Authenticates the user and returns the Google Docs API service client."""
     creds = None
     # The file token.json stores the user's access and refresh tokens.
@@ -69,7 +75,7 @@ def get_google_docs_service():
     # If there are no (valid) credentials available, let the user log in.
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            creds.refresh(Request()) # Request: It serves as the underlying HTTP network engine. It provides the secure connection environment
         else:
             if not os.path.exists('credentials.json'):
                 raise FileNotFoundError(
@@ -88,7 +94,15 @@ def get_google_docs_service():
 
     # build('docs', 'v1', ...) initializes an authorized 
     # client pointing directly at Google Docs API v1.
+    return creds
+
+def get_google_docs_service():
+    creds = get_google_auth_credentials()
     return build('docs', 'v1', credentials=creds)
+
+def get_drive_service():
+    creds = get_google_auth_credentials()
+    return build('drive', 'v3', credentials=creds)
 
 def extract_text_from_elements(elements):
     """Recursively extracts raw text from structural elements of a Google Doc."""
@@ -107,14 +121,9 @@ def extract_text_from_elements(elements):
                     text += extract_text_from_elements(cell.get('content'))
     return text
 
-# Defines a explicit blueprint for incoming API calls. 
-# It mandates that any frontend request sent to this path 
-# must provide a JSON payload containing a string parameter key 
-# explicitly named "document_id".
 class DocRequest(BaseModel):
     document_id: str
     job_description: str
-
 
 class ReplacementItem(BaseModel):
     old_text: str = Field(description="The exact text of the original bullet point from the CV.")
@@ -125,8 +134,33 @@ class SummaryReplacement(BaseModel):
     new_summary: str = Field(description="The newly optimized professional summary tailored to the target job description.")
 
 class CVTailorResponse(BaseModel):
-    summary_replacement: Optional[SummaryReplacement] = Field(description="The structural changes for the resume's summary or profile section.")
+    summary_replacement: SummaryReplacement = Field(description="The structural changes for the resume's summary or profile section.")
     tailored_bullets: List[ReplacementItem] = Field(description="The list of changes for individual resume project/work bullet points.")
+
+# Define the payload format your frontend will send
+class UpdateDocRequest(BaseModel):
+    document_id: str
+    summary_replacement: Optional[SummaryReplacement] = None
+    tailored_bullets: List[ReplacementItem]
+
+@contextmanager
+def temporary_google_doc(drive_service, source_file_id: str, title: str):
+    """
+    Context manager that duplicates a source Google Doc, yields its temporary ID,
+    and guarantees its absolute deletion from Google Drive when exiting the block—
+    even if downstream operations or network streaming crashes.
+    """
+    copy_metadata = {'name': title}
+    copied_file = drive_service.files().copy(fileId=source_file_id, body=copy_metadata).execute()
+    temp_id = copied_file.get('id')
+    try:
+        yield temp_id
+    finally:
+        try:
+            drive_service.files().delete(fileId=temp_id).execute()
+        except Exception as e:
+            print(f"Failed to clean up temporary file {temp_id}: {e}")
+
 
 @app.post("/api/tailor-cv")
 async def tailor_cv(payload: DocRequest):
@@ -184,12 +218,15 @@ def replace_cv_elements_in_google_doc(document_id: str, data: dict, service):
     
     # 1. Queue up the Summary Replacement if it exists
     summary_data = data.get("summary_replacement")
+    print("\n------------------------")
+    print(summary_data)
+    print("\n--------------------------")
     if summary_data and summary_data.get("old_summary"):
         requests.append({
             'replaceAllText': {
                 'containsText': {
                     'text': summary_data['old_summary'],
-                    'matchCase': True
+                    'matchCase': True #case-sensitive
                 },
                 'replaceText': summary_data['new_summary']
             }
@@ -218,37 +255,48 @@ def replace_cv_elements_in_google_doc(document_id: str, data: dict, service):
     return {"status": "success", "message": "Document updated successfully."}
 
 
-# Define the payload format your frontend will send
-class UpdateDocRequest(BaseModel):
-    document_id: str
-    summary_replacement: Optional[SummaryReplacement] = None
-    tailored_bullets: List[ReplacementItem]
-
 @app.post("/api/update-doc")
 async def update_google_document(payload: UpdateDocRequest):
     try:
-        # 1. Use your existing function to get the authorized service
         docs_service = get_google_docs_service()
+        drive_service = get_drive_service()
         
-        # 2. Package the payload
         execution_data = {
-            "summary_replacement": payload.summary_replacement.dict() if payload.summary_replacement else None,
-            "replacements": [item.dict() for item in payload.tailored_bullets]
+            "summary_replacement": payload.summary_replacement.model_dump() if payload.summary_replacement else None,
+            "replacements": [item.model_dump() for item in payload.tailored_bullets]
         }
         
-        # 3. Call your replacement logic
-        # NOTE: Pass 'docs_service' instead of 'credentials' if your 
-        # replace_cv_elements_in_google_doc function expects the service object.
-        result = replace_cv_elements_in_google_doc(
-            document_id=payload.document_id,
-            data=execution_data,
-            service=docs_service # Updated to pass the service client
-        )
+        temp_filename = f"Tailored_CV_Working_Copy_{payload.document_id[:6]}"
         
-        return result
+        # Open our safety context manager wrapping the duplication routine
+        with temporary_google_doc(drive_service, payload.document_id, temp_filename) as temp_doc_id:
+            
+            # 1. Modify the temporary clone instead of the user's master file
+            replace_cv_elements_in_google_doc(
+                document_id=temp_doc_id,
+                data=execution_data,
+                service=docs_service
+            )
+            
+            # 2. Convert and download the file locally to backend memory as a PDF binary stream
+            pdf_bytes = drive_service.files().export_media(
+                fileId=temp_doc_id,
+                mimeType='application/pdf'
+            ).execute()
+            
+        # 3. Stream the file directly down to the browser.
+        # (Once this block closes, the context manager automatically deletes the temporary Google Doc)
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={"Content-Disposition": "attachment; filename=Tailored_Resume.pdf"}
+        )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update document: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update and export document: {str(e)}")
+
+    
+
 if __name__ == "__main__":
     # Run the server locally on port 8000
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
