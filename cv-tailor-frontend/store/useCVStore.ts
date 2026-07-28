@@ -108,16 +108,30 @@ export const useCVStore = create<CVState>((set, get) => ({
         })
       });
 
-      const result = await response.json();
-      if (response.ok && result.status === 'success') {
-        alert("🎉 Google Doc successfully updated in-place!");
-      } else {
-        throw new Error(result.detail || "Failed to update doc");
-      }
+      if (!response.ok) throw new Error("Network response failed");
+
+      const pdfBlob = await response.blob();
+      // 2. Create a hidden download link
+    const downloadUrl = window.URL.createObjectURL(pdfBlob);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = "Tailored_Resume.pdf"; // Modern property syntax
+
+    // 3. Append, click, and cleanly detach
+    document.body.appendChild(link);
+    link.click();
+    
+    //  FIX: Use .remove() directly instead of link.parentNode.removeChild()
+    link.remove();
+    
+    // 4. Revoke the object URL to prevent memory leaks
+    window.URL.revokeObjectURL(downloadUrl);
+    
     } catch (error) {
       console.error(error);
       alert("Error updating document. Check backend console.");
     } finally {
+      alert("Done.");
       set({ isSaving: false });
     }
   }
