@@ -23,9 +23,6 @@ export default function CVTailingDashboard() {
         <h1 className="text-3xl font-extrabold tracking-tight text-indigo-600">
           CV Tailor AI 
         </h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Extract Google Docs context and optimize application structures via LLM.
-        </p>
       </header>
 
       <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -47,7 +44,7 @@ export default function CVTailingDashboard() {
           <div className="flex-1 flex flex-col">
             <label className="block text-sm font-semibold mb-2 text-slate-700">Target Job Description</label>
             <textarea
-              className="w-full flex-1 min-h-[300px] p-3 rounded-lg border border-slate-300 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm transition resize-none"
+              className="w-full flex-1 min-h-[10px] p-3 rounded-lg border border-slate-300 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm transition resize-none"
               placeholder="Paste the raw text block gathered from the target career portal..."
               value={jobDescription}
               onChange={(e) => setJobDescription(e.target.value)}
@@ -75,9 +72,9 @@ export default function CVTailingDashboard() {
           <button
             onClick={updateGoogleDoc}
             disabled={isSaving}
-            className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-semibold text-sm rounded-lg transition shadow-sm text-center"
+            className="py-3.5 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-bold text-sm rounded-lg transition shadow-sm text-center"
           >
-            {isSaving ? "Updating Document..." : "Apply Changes to Google Doc"}
+            {isSaving ? "Updating Document..." : "Download Tailored CV"}
           </button>
 
         </section>
